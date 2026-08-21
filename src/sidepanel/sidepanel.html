@@ -9,7 +9,7 @@
   <body>
     <header>
       <div>
-        <p class="eyebrow">LOCAL OPENCODE</p>
+        <p class="eyebrow">IN-PAGE AI READER</p>
         <h1>AI Reader</h1>
       </div>
       <span id="connection-badge" class="badge offline">未连接</span>
@@ -17,18 +17,37 @@
 
     <main>
       <section class="card settings">
+        <label class="mode-label">使用方式
+          <select id="connection-mode">
+            <option value="volcengine">火山直连（推荐）</option>
+            <option value="opencode">OpenCode（高级）</option>
+          </select>
+        </label>
         <details>
           <summary>连接设置</summary>
-          <label>OpenCode 地址<input id="server-url" value="http://127.0.0.1:4096" spellcheck="false"></label>
-          <label>用户名<input id="username" value="opencode" autocomplete="username"></label>
-          <label>服务密码<input id="password" type="password" autocomplete="current-password" placeholder="仅保存在当前浏览器会话"></label>
+          <div id="volcengine-settings" class="settings-grid">
+            <label>Base URL<input id="volcengine-base-url" value="https://ark.cn-beijing.volces.com/api/v3" spellcheck="false"></label>
+            <label>API Key<input id="volcengine-api-key" type="password" autocomplete="off" placeholder="仅保存在当前浏览器会话"></label>
+            <label>Model ID<input id="volcengine-model-id" spellcheck="false" placeholder="例如 endpoint 或模型 ID"></label>
+            <p class="privacy-note">API Key 仅保存在浏览器内存中，关闭浏览器后自动清除。</p>
+          </div>
+          <div id="opencode-settings" class="settings-grid" hidden>
+            <label>OpenCode 地址<input id="server-url" value="http://127.0.0.1:4096" spellcheck="false"></label>
+            <label>用户名<input id="username" value="opencode" autocomplete="username"></label>
+            <label>服务密码<input id="password" type="password" autocomplete="current-password" placeholder="仅保存在当前浏览器会话"></label>
+            <div class="model-row">
+              <label>Provider<select id="provider" disabled><option>请先连接</option></select></label>
+              <label>Model<select id="model" disabled><option>请先连接</option></select></label>
+            </div>
+          </div>
           <label>单块字符上限<input id="chunk-chars" type="number" min="1000" max="48000" step="1000" value="12000"></label>
-          <button id="connect" class="secondary">连接并读取模型</button>
+          <button id="connect" class="secondary">保存直连配置</button>
         </details>
-        <div class="model-row">
-          <label>Provider<select id="provider" disabled><option>请先连接</option></select></label>
-          <label>Model<select id="model" disabled><option>请先连接</option></select></label>
-        </div>
+      </section>
+
+      <section class="quick-actions">
+        <button id="translate" class="primary-wide" disabled>翻译当前网页</button>
+        <button id="restore" class="secondary" disabled>显示原文</button>
       </section>
 
       <section class="card article-card">
@@ -37,14 +56,14 @@
             <p class="eyebrow">CURRENT PAGE</p>
             <h2 id="article-title">尚未抽取网页</h2>
           </div>
-          <button id="extract" class="secondary">抽取</button>
+          <button id="extract" class="ghost">重新读取</button>
         </div>
-        <p id="article-meta" class="muted">点击扩展后，仅按你的操作读取当前标签页。</p>
+        <p id="article-meta" class="muted">点击“翻译当前网页”后会自动读取并开始翻译。</p>
       </section>
 
       <section class="actions">
-        <button id="translate" disabled>忠实翻译</button>
         <button id="analyze" disabled>全文分析</button>
+        <button id="copy" class="secondary" disabled>复制结果</button>
       </section>
 
       <section class="ask-row">
@@ -60,12 +79,11 @@
           </div>
           <div class="compact-actions">
             <button id="stop" class="danger" disabled>停止</button>
-            <button id="copy" class="ghost" disabled>复制</button>
             <button id="export" class="ghost" disabled>导出</button>
           </div>
         </div>
         <div id="progress" class="progress" hidden><span></span></div>
-        <pre id="output">连接 OpenCode 并抽取当前网页后即可开始。</pre>
+        <pre id="output">配置模型后，点击“翻译当前网页”即可开始。</pre>
         <div id="sources" class="sources"></div>
         <div id="error" class="error" hidden></div>
       </section>
