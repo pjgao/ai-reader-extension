@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AI Reader</title>
+    <link rel="stylesheet" href="sidepanel.css">
+  </head>
+  <body>
+    <header>
+      <div>
+        <p class="eyebrow">LOCAL OPENCODE</p>
+        <h1>AI Reader</h1>
+      </div>
+      <span id="connection-badge" class="badge offline">未连接</span>
+    </header>
+
+    <main>
+      <section class="card settings">
+        <details>
+          <summary>连接设置</summary>
+          <label>OpenCode 地址<input id="server-url" value="http://127.0.0.1:4096" spellcheck="false"></label>
+          <label>用户名<input id="username" value="opencode" autocomplete="username"></label>
+          <label>服务密码<input id="password" type="password" autocomplete="current-password" placeholder="仅保存在当前浏览器会话"></label>
+          <label>单块字符上限<input id="chunk-chars" type="number" min="1000" max="48000" step="1000" value="12000"></label>
+          <button id="connect" class="secondary">连接并读取模型</button>
+        </details>
+        <div class="model-row">
+          <label>Provider<select id="provider" disabled><option>请先连接</option></select></label>
+          <label>Model<select id="model" disabled><option>请先连接</option></select></label>
+        </div>
+      </section>
+
+      <section class="card article-card">
+        <div class="section-title">
+          <div>
+            <p class="eyebrow">CURRENT PAGE</p>
+            <h2 id="article-title">尚未抽取网页</h2>
+          </div>
+          <button id="extract" class="secondary">抽取</button>
+        </div>
+        <p id="article-meta" class="muted">点击扩展后，仅按你的操作读取当前标签页。</p>
+      </section>
+
+      <section class="actions">
+        <button id="translate" disabled>忠实翻译</button>
+        <button id="analyze" disabled>全文分析</button>
+      </section>
+
+      <section class="ask-row">
+        <textarea id="question" rows="2" placeholder="针对全文提问……" disabled></textarea>
+        <button id="ask" disabled>提问</button>
+      </section>
+
+      <section class="card result-card">
+        <div class="section-title">
+          <div>
+            <p id="phase" class="eyebrow">READY</p>
+            <h2>阅读结果</h2>
+          </div>
+          <div class="compact-actions">
+            <button id="stop" class="danger" disabled>停止</button>
+            <button id="copy" class="ghost" disabled>复制</button>
+            <button id="export" class="ghost" disabled>导出</button>
+          </div>
+        </div>
+        <div id="progress" class="progress" hidden><span></span></div>
+        <pre id="output">连接 OpenCode 并抽取当前网页后即可开始。</pre>
+        <div id="sources" class="sources"></div>
+        <div id="error" class="error" hidden></div>
+      </section>
+    </main>
+    <script type="module" src="sidepanel.js"></script>
+  </body>
+</html>
