@@ -15,7 +15,7 @@ if (manifest.permissions?.includes("<all_urls>")) errors.push("permanent all_url
 async function walk(directory) {
   const files = [];
   for (const entry of await readdir(directory, { withFileTypes: true })) {
-    if ([".git", "node_modules"].includes(entry.name)) continue;
+    if ([".git", ".playwright-cli", "node_modules", "output"].includes(entry.name)) continue;
     const path = resolve(directory, entry.name);
     if (entry.isDirectory()) files.push(...await walk(path));
     else files.push(path);
