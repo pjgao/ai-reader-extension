@@ -9,8 +9,9 @@
 1. 打开 `edge://extensions/`，启用“开发人员模式”。
 2. 点击“加载解压缩的扩展”，选择本仓库目录。
 3. 在普通 `http`/`https` 网页中点击 AI Reader 图标。
-4. 保持“火山直连（推荐）”，填写 Base URL、API Key 和 Model ID。
-5. 点击“保存直连配置”，然后点击“翻译当前网页”。
+4. 保持“火山直连（推荐）”，填写 Base URL 和 API Key。
+5. 点击“连接并读取模型”。插件会自动列出网关返回的模型；如果网关不支持 `/models`，手动填写一次 Model ID。
+6. 选中的模型会自动保存，然后点击“翻译当前网页”。
 
 标准火山方舟 Base URL 为：
 
@@ -20,7 +21,7 @@ https://ark.cn-beijing.volces.com/api/v3
 
 也可以填写兼容 OpenAI Chat Completions 的 HTTPS 网关 Base URL。扩展会请求 `{Base URL}/chat/completions` 并使用 SSE 流式更新原网页。
 
-API Key 只写入 `chrome.storage.session`：插件重新加载、禁用或浏览器重启后会清除。Base URL、Model ID 和普通偏好设置保存在 `chrome.storage.local`。
+API Key、Base URL、Model ID 和普通偏好设置都保存在 `chrome.storage.local`，浏览器重启后会自动恢复。OpenCode 服务密码仍只写入 `chrome.storage.session`。
 
 ## OpenCode 高级模式
 
@@ -56,7 +57,8 @@ opencode serve --hostname 127.0.0.1 --port 4096 --cors "chrome-extension://<exte
 ## 安全边界
 
 - 仅在用户点击操作后读取当前标签页。
-- API Key 与 OpenCode 密码只保存在浏览器会话内存中。
+- 火山 API Key 保存在当前浏览器扩展的本地配置中，适合个人可信电脑；能访问该浏览器配置的人也可能读取它。卸载扩展会删除这份配置。
+- OpenCode 密码只保存在浏览器会话内存中。
 - 模型凭据不会注入网页、写入日志或导出文件。
 - 网页正文被视为不可信数据，每个请求固定禁用工具调用。
 - 火山直连只允许 HTTPS；OpenCode 只允许 `http://127.0.0.1:4096`。

@@ -13,6 +13,29 @@ function chatCompletionsUrl(baseUrl) {
   return baseUrl.endsWith("/chat/completions") ? baseUrl : `${baseUrl}/chat/completions`;
 }
 
+function modelsUrl(baseUrl) {
+  return baseUrl.endsWith("/chat/completions")
+    ? `${baseUrl.slice(0, -"/chat/completions".length)}/models`
+    : `${baseUrl}/models`;
+}
+
+export function extractModels(payload) {
+  const source = Array.isArray(payload?.data)
+    ? payload.data
+    : Array.isArray(payload?.models)
+      ? payload.models
+      : payload?.models && typeof payload.models === "object"
+        ? Object.entries(payload.models).map(([id, model]) => ({ id, ...model }))
+        : [];
+  return source
+    .map((model) => {
+      const id = typeof model === "string" ? model : model?.id || model?.modelID || model?.name;
+      const name = typeof model === "object" ? model?.display_name || model?.displayName || model?.name || id : id;
+      return id ? { id, name } : null;
+    })
+    .filter(Boolean);
+}
+
 export function extractChatText(payload) {
   const content = payload?.choices?.[0]?.message?.content;
   if (typeof content === "string" && content) return content;
@@ -31,6 +54,24 @@ export class VolcengineClient {
 
   createSession() {
     return Promise.resolve(`direct-${Date.now()}`);
+  }
+
+  async models(signal) {
+    const response = await this.fetch(modelsUrl(this.baseUrl), {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${this.apiKey}`,
+      },
+      signal,
+    });
+    if (!response.ok) {
+      const body = safeError((await response.text()).slice(0, 500));
+      throw new Error(`模型列表 HTTP ${response.status}${body ? `：${body}` : ""}`);
+    }
+    const models = extractModels(await response.json());
+    if (!models.length) throw new Error("接口没有返回可用模型");
+    return models;
   }
 
   async request(model, prompt, stream, signal) {

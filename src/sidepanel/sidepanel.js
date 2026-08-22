@@ -7,7 +7,8 @@ import { DEFAULT_VOLCENGINE_BASE_URL, VolcengineClient } from "../volcengine/cli
 
 const $ = (id) => document.getElementById(id);
 const ui = Object.fromEntries([
-  "connection-mode", "volcengine-settings", "volcengine-base-url", "volcengine-api-key", "volcengine-model-id",
+  "connection-mode", "volcengine-settings", "volcengine-base-url", "volcengine-api-key", "volcengine-model",
+  "volcengine-custom-model-row", "volcengine-custom-model-id", "volcengine-model-hint",
   "opencode-settings", "server-url", "username", "password", "chunk-chars", "connect", "provider", "model", "extract",
   "article-title", "article-meta", "translate", "restore", "analyze", "question", "ask", "stop", "copy", "export",
   "phase", "progress", "output", "sources", "error", "connection-badge",
@@ -83,11 +84,11 @@ function setBusy(busy) {
   ui.stop.disabled = !busy;
   ui.connect.disabled = busy;
   ui.extract.disabled = busy;
-  ui.translate.disabled = busy || !state.client;
+  ui.translate.disabled = busy || !state.client || !modelReady();
   ui.restore.disabled = busy || !state.document;
-  ui.analyze.disabled = busy || !state.client;
-  ui.ask.disabled = busy || !state.client;
-  ui.question.disabled = busy || !state.client;
+  ui.analyze.disabled = busy || !state.client || !modelReady();
+  ui.ask.disabled = busy || !state.client || !modelReady();
+  ui.question.disabled = busy || !state.client || !modelReady();
 }
 
 function setOutput(text, append = false) {
@@ -113,15 +114,20 @@ function renderSources() {
 
 async function loadSettings() {
   const local = await chrome.storage.local.get([
-    "connectionMode", "volcengineBaseUrl", "volcengineModelID",
+    "connectionMode", "volcengineBaseUrl", "volcengineApiKey", "volcengineModelID",
     "serverUrl", "username", "providerID", "modelID", "chunkChars",
   ]);
   const session = await chrome.storage.session.get(["password", "volcengineApiKey"]);
+  const volcengineApiKey = local.volcengineApiKey || session.volcengineApiKey || "";
+  if (!local.volcengineApiKey && session.volcengineApiKey) {
+    await chrome.storage.local.set({ volcengineApiKey: session.volcengineApiKey });
+    await chrome.storage.session.remove("volcengineApiKey");
+  }
   state.mode = local.connectionMode || "volcengine";
   ui.connection_mode.value = state.mode;
   ui.volcengine_base_url.value = local.volcengineBaseUrl || DEFAULT_VOLCENGINE_BASE_URL;
-  ui.volcengine_api_key.value = session.volcengineApiKey || "";
-  ui.volcengine_model_id.value = local.volcengineModelID || "";
+  ui.volcengine_api_key.value = volcengineApiKey;
+  ui.volcengine_custom_model_id.value = local.volcengineModelID || "";
   ui.server_url.value = local.serverUrl || "http://127.0.0.1:4096";
   ui.username.value = local.username || "opencode";
   ui.password.value = session.password || "";
@@ -134,7 +140,8 @@ async function saveSettings() {
   await chrome.storage.local.set({
     connectionMode: state.mode,
     volcengineBaseUrl: ui.volcengine_base_url.value.trim(),
-    volcengineModelID: ui.volcengine_model_id.value.trim(),
+    volcengineApiKey: ui.volcengine_api_key.value,
+    volcengineModelID: selectedDirectModelID(),
     serverUrl: ui.server_url.value.trim(),
     username: ui.username.value.trim(),
     providerID: ui.provider.value,
@@ -143,7 +150,6 @@ async function saveSettings() {
   });
   await chrome.storage.session.set({
     password: ui.password.value,
-    volcengineApiKey: ui.volcengine_api_key.value,
   });
 }
 
@@ -151,9 +157,53 @@ function updateModeUI() {
   const direct = state.mode === "volcengine";
   ui.volcengine_settings.hidden = !direct;
   ui.opencode_settings.hidden = direct;
-  ui.connect.textContent = direct ? "保存直连配置" : "连接并读取模型";
+  ui.connect.textContent = "连接并读取模型";
   ui.connection_badge.textContent = direct ? "待配置" : "未连接";
   ui.connection_badge.className = "badge offline";
+}
+
+function selectedDirectModelID() {
+  return ui.volcengine_model.value === "__custom__"
+    ? ui.volcengine_custom_model_id.value.trim()
+    : ui.volcengine_model.value;
+}
+
+function modelReady() {
+  if (state.mode === "volcengine") return Boolean(selectedDirectModelID());
+  return Boolean(ui.provider.value && ui.model.value);
+}
+
+function fillVolcengineModels(models, preferredModel = "") {
+  ui.volcengine_model.replaceChildren();
+  for (const model of models) {
+    const option = document.createElement("option");
+    option.value = model.id;
+    option.textContent = model.name === model.id ? model.id : `${model.name} · ${model.id}`;
+    ui.volcengine_model.append(option);
+  }
+  const custom = document.createElement("option");
+  custom.value = "__custom__";
+  custom.textContent = "手动填写 Model ID…";
+  ui.volcengine_model.append(custom);
+  ui.volcengine_model.disabled = false;
+
+  if (models.some((model) => model.id === preferredModel)) {
+    ui.volcengine_model.value = preferredModel;
+  } else if (preferredModel || !models.length) {
+    ui.volcengine_model.value = "__custom__";
+    ui.volcengine_custom_model_id.value = preferredModel;
+  }
+  updateCustomModelUI();
+}
+
+function updateCustomModelUI() {
+  ui.volcengine_custom_model_row.hidden = ui.volcengine_model.value !== "__custom__";
+}
+
+function updateDirectReadyUI() {
+  if (state.mode !== "volcengine" || !state.client) return;
+  ui.connection_badge.textContent = modelReady() ? "直连就绪" : "请选择模型";
+  ui.connection_badge.className = "badge online";
 }
 
 function fillProviders(preferredProvider, preferredModel) {
@@ -184,8 +234,8 @@ function fillModels(preferredModel) {
 
 function selectedModel() {
   if (state.mode === "volcengine") {
-    const modelID = ui.volcengine_model_id.value.trim();
-    if (!modelID) throw new Error("请填写火山 Model ID");
+    const modelID = selectedDirectModelID();
+    if (!modelID) throw new Error("请选择模型或填写 Model ID");
     return { providerID: "volcengine", modelID };
   }
   if (!ui.provider.value || !ui.model.value) throw new Error("请先选择 provider 和 model");
@@ -196,18 +246,34 @@ async function connect(preferred = {}) {
   clearError();
   if (state.mode === "volcengine") {
     try {
-      selectedModel();
       state.client = new VolcengineClient({
         baseUrl: ui.volcengine_base_url.value.trim(),
         apiKey: ui.volcengine_api_key.value,
       });
+      ui.connection_badge.textContent = "读取模型";
+      ui.connection_badge.className = "badge offline";
+      const preferredModel = preferred.volcengineModelID || selectedDirectModelID();
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10_000);
+      try {
+        const models = await state.client.models(controller.signal);
+        fillVolcengineModels(models, preferredModel);
+        ui.volcengine_model_hint.textContent = `已读取 ${models.length} 个可用模型，选择后会自动保存。`;
+      } catch (error) {
+        fillVolcengineModels([], preferredModel);
+        ui.volcengine_model_hint.textContent = `网关不支持读取模型列表，请手动填写 Model ID。${safeError(error)}`;
+      } finally {
+        clearTimeout(timeout);
+      }
       await saveSettings();
-      ui.connection_badge.textContent = "直连就绪";
+      ui.connection_badge.textContent = modelReady() ? "直连就绪" : "请选择模型";
       ui.connection_badge.className = "badge online";
       ui.phase.textContent = "READY";
     } catch (error) {
       state.client = null;
-      showError(error, "API Key 只保存在当前浏览器会话中。 ");
+      ui.connection_badge.textContent = "待配置";
+      ui.connection_badge.className = "badge offline";
+      showError(error, "API Key 会保存在当前浏览器扩展的本地配置中。 ");
     }
     setBusy(false);
     return;
@@ -524,12 +590,23 @@ ui.connection_mode.addEventListener("change", async () => {
   state.providers = [];
   updateModeUI();
   await saveSettings();
-  if (state.mode === "volcengine" && ui.volcengine_api_key.value && ui.volcengine_model_id.value) await connect();
+  if (state.mode === "volcengine" && ui.volcengine_api_key.value) await connect();
   else if (state.mode === "opencode" && ui.password.value) await connect();
   else setBusy(false);
 });
 ui.provider.addEventListener("change", () => { fillModels(); saveSettings(); });
 ui.model.addEventListener("change", saveSettings);
+ui.volcengine_model.addEventListener("change", async () => {
+  updateCustomModelUI();
+  await saveSettings();
+  updateDirectReadyUI();
+  setBusy(false);
+});
+ui.volcengine_custom_model_id.addEventListener("change", async () => {
+  await saveSettings();
+  updateDirectReadyUI();
+  setBusy(false);
+});
 ui.chunk_chars.addEventListener("change", saveSettings);
 ui.translate.addEventListener("click", translate);
 ui.restore.addEventListener("click", restoreOriginal);
@@ -544,5 +621,5 @@ ui.export.addEventListener("click", exportOutput);
 
 const preferred = await loadSettings();
 setBusy(false);
-if (state.mode === "volcengine" && ui.volcengine_api_key.value && ui.volcengine_model_id.value) connect(preferred);
+if (state.mode === "volcengine" && ui.volcengine_api_key.value) connect(preferred);
 if (state.mode === "opencode" && ui.password.value) connect(preferred);
