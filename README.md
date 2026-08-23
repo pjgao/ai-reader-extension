@@ -13,7 +13,7 @@
 
 </div>
 
-![AI Reader 把 DFlash 2 英文技术文章原位翻译成中文](./docs/images/dflash2-translated-final.png)
+![AI Reader 同位置英文原页与中文译文对比](./docs/images/dflash2-before-after.png)
 
 ## 为什么写这个扩展
 
@@ -27,7 +27,7 @@ Chrome 和 Edge 自带翻译很方便，普通网页基本够用。但一碰到�
 
 ## 实际效果
 
-上面的截图来自 [Inco AI 的 DFlash 2 文章](https://inco.ai/blog/dflash2/)。AI Reader 只替换文字，没有改动网页结构：
+上面的左右截图来自 [Inco AI 的 DFlash 2 文章](https://inco.ai/blog/dflash2/)，使用相同的视口和正文位置。可以直接对照红色链接、粗体、斜体、段落层级以及下方的文章配图；AI Reader 只替换文字，没有改动网页结构：
 
 - 英文按生成进度逐步变成中文，没翻到的部分继续显示英文；
 - 链接、强调样式、段落间距和页面主题保持不变；
