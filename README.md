@@ -67,29 +67,84 @@ AI Reader 暂时以解压缩扩展的方式安装，不需要构建。
 
 更新代码后，在扩展管理页点击一次“重新加载”即可。
 
-## 最简单的配置：连接模型平台 API
+## 连接模型平台 API
 
-第一次使用时展开“连接设置”，填写 Base URL 和 API Key，然后点击“连接并读取模型”。
+AI Reader 使用 OpenAI Chat Completions 兼容协议，不绑定某一家平台。第一次配置时：
 
-AI Reader 使用 OpenAI Chat Completions 兼容协议，不绑定某一家平台。下面这些官方 API 都可以配置：
+1. 在模型平台的开放平台或开发者控制台创建 API Key，并确认账号有可用 API 额度。
+2. 打开 AI Reader 的“连接设置”，使用方式选择“模型 API 直连”。
+3. 填入对应的 Base URL 和 API Key，点击“连接并读取模型”。
+4. 从下拉框选择模型；如果平台没有提供标准模型列表接口，就手动填写控制台中的 Model ID。
+5. 返回网页，点击“翻译当前网页”。
 
-| 平台 | Base URL |
-| --- | --- |
-| [DeepSeek 开放平台](https://api-docs.deepseek.com/quick_start/pricing-details-cny/) | `https://api.deepseek.com` |
-| [阿里云百炼](https://help.aliyun.com/zh/model-studio/base-url) | `https://dashscope.aliyuncs.com/compatible-mode/v1`，或控制台提供的业务空间专属地址 |
-| [智谱开放平台](https://docs.bigmodel.cn/cn/api/introduction) | `https://open.bigmodel.cn/api/paas/v4` |
-| [Kimi 开放平台](https://platform.kimi.com/docs/api/overview) | `https://api.moonshot.cn/v1` |
-| [火山方舟](https://www.volcengine.com/docs/82379/1795150) | `https://ark.cn-beijing.volces.com/api/v3` |
+支持情况：
 
-也可以填写其他兼容 OpenAI Chat Completions 的 HTTPS 地址。扩展会请求：
+| 平台 | Base URL | 模型选择 |
+| --- | --- | --- |
+| [DeepSeek 开放平台](https://api-docs.deepseek.com/quick_start/pricing-details-cny/) | `https://api.deepseek.com` | 支持自动读取模型 |
+| [阿里云百炼](https://help.aliyun.com/zh/model-studio/base-url) | `https://dashscope.aliyuncs.com/compatible-mode/v1`，或控制台显示的业务空间专属地址 | 自动读取失败时手动填写，例如 `qwen-plus` |
+| [智谱开放平台](https://docs.bigmodel.cn/cn/api/introduction) | `https://open.bigmodel.cn/api/paas/v4` | 自动读取失败时填写控制台中的 GLM Model ID |
+| [Kimi 开放平台](https://platform.kimi.com/docs/api/overview) | `https://api.moonshot.cn/v1` | 支持自动读取模型 |
+| [火山方舟](https://www.volcengine.com/docs/82379/1795150) | `https://ark.cn-beijing.volces.com/api/v3` | 选择自动读取结果，或填写方舟控制台中的模型/推理接入点 ID |
+
+### DeepSeek
+
+在 DeepSeek 开放平台创建 API Key 并充值 API 余额，然后填写：
+
+```text
+Base URL: https://api.deepseek.com
+API Key:  DeepSeek 开放平台生成的 Key
+```
+
+点击“连接并读取模型”后，AI Reader 会调用 DeepSeek 的 `/models` 接口生成下拉列表。这里需要的是开放平台 API 余额；网页聊天权益不等于 API 额度。
+
+### 阿里云百炼 / Qwen
+
+在[百炼控制台创建 API Key](https://help.aliyun.com/zh/model-studio/get-api-key)，优先使用创建成功时显示的 API Host。北京地域的公共 OpenAI 兼容地址为：
+
+```text
+https://dashscope.aliyuncs.com/compatible-mode/v1
+```
+
+API Key、Base URL 和业务空间必须匹配。Token Plan、Coding Plan 能否用于浏览器扩展要以套餐规则为准；允许使用时也必须填写套餐专属 Key 和 Base URL，不能与按量付费地址混用。若模型列表读取失败，选择“手动填写 Model ID”，填入百炼模型广场给出的 ID。
+
+### 智谱 GLM
+
+在智谱开放平台创建通用 API Key，然后填写：
+
+```text
+https://open.bigmodel.cn/api/paas/v4
+```
+
+模型列表读取失败时，手动填写当前账号可调用的 GLM Model ID。智谱 Coding 套餐有单独的 Coding 端点和使用范围；网页翻译优先使用通用 API 额度。
+
+### Kimi
+
+在 Kimi 开放平台创建 API Key，然后填写：
+
+```text
+https://api.moonshot.cn/v1
+```
+
+Kimi 提供标准 `/v1/models` 接口，连接后可以直接选择当前可用模型。Kimi 网页会员与开放平台 API Key、API 余额不是同一项服务。
+
+### 火山方舟
+
+在火山方舟控制台创建 API Key，然后填写：
+
+```text
+https://ark.cn-beijing.volces.com/api/v3
+```
+
+选择自动读取到的模型；如果使用自定义网关或推理接入点且 `/models` 返回 404，就手动填写控制台中的模型 ID 或推理接入点 ID。
+
+其他兼容 OpenAI Chat Completions 的 HTTPS 地址也可以使用。扩展会请求：
 
 ```text
 POST {Base URL}/chat/completions
 ```
 
-如果服务支持 `GET {Base URL}/models`，模型会自动出现在下拉框里。如果返回 404，侧栏会明确提醒，并切换到手动 Model ID。只需填写一次，之后会自动恢复。
-
-这里需要的是模型开放平台提供的 API Key 和可用 API 额度。网页或 App 的聊天会员通常不等于 API 权益；Coding Plan、Token Plan 等套餐也要使用套餐指定的 Base URL、API Key 和模型范围。
+如果服务支持 `GET {Base URL}/models`，模型会自动出现在下拉框里。如果返回 404，侧栏会明确提醒，并切换到手动 Model ID。配置只需填写一次，之后会自动恢复。
 
 Base URL、API Key 和选中的模型保存在当前浏览器扩展的 `chrome.storage.local` 中。这里不是加密保险箱，只适合自己的可信电脑。
 
