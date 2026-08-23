@@ -1,4 +1,5 @@
-const STORAGE_KEY = "translationCacheV1";
+const STORAGE_KEY = "translationCacheV2";
+const LEGACY_STORAGE_KEY = "translationCacheV1";
 const MAX_PAGES = 20;
 const MAX_SERIALIZED_CHARS = 2_000_000;
 
@@ -24,6 +25,7 @@ export function translationCacheScope({ pageUrl, baseUrl, providerID, modelID })
 }
 
 export async function loadCachedTranslations(storage, descriptor) {
+  await storage.remove(LEGACY_STORAGE_KEY);
   const scope = translationCacheScope(descriptor);
   const data = await storage.get(STORAGE_KEY);
   const entry = (data[STORAGE_KEY]?.entries || []).find((item) => item.scope === scope);
@@ -31,6 +33,7 @@ export async function loadCachedTranslations(storage, descriptor) {
 }
 
 export async function saveCachedTranslations(storage, descriptor, segments) {
+  await storage.remove(LEGACY_STORAGE_KEY);
   const scope = translationCacheScope(descriptor);
   const data = await storage.get(STORAGE_KEY);
   const entries = (data[STORAGE_KEY]?.entries || []).filter((item) => item.scope !== scope);
@@ -41,5 +44,5 @@ export async function saveCachedTranslations(storage, descriptor, segments) {
 }
 
 export async function clearTranslationCache(storage) {
-  await storage.remove(STORAGE_KEY);
+  await storage.remove([STORAGE_KEY, LEGACY_STORAGE_KEY]);
 }

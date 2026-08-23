@@ -21,7 +21,7 @@ export function translationPrompt(chunk, document, language = "简体中文") {
     "[block:原ID]",
     "该文本节点的译文",
     "[/block:原ID]",
-    "不得输出 context 标记，不得使用 Markdown 代码围栏，不得遗漏、合并、拆分或改写 block ID。不要添加标题井号、列表符号或其他排版字符；网页原有排版由 DOM 保留。",
+    "不得输出 context 标记，不得使用 Markdown 代码围栏、JSON、数组、引号包裹或三引号，不得遗漏、合并、拆分或改写 block ID。不要添加标题井号、列表符号或其他排版字符；网页原有排版由 DOM 保留。",
     wrapPageContent(input),
   ].join("\n\n");
 }

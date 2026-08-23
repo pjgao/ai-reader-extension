@@ -8,12 +8,13 @@ import {
   translationCacheScope,
 } from "../src/cache/translation-cache.js";
 
-function memoryStorage() {
-  const values = {};
+function memoryStorage(initial = {}) {
+  const values = { ...initial };
   return {
+    values,
     async get(key) { return { [key]: values[key] }; },
     async set(items) { Object.assign(values, items); },
-    async remove(key) { delete values[key]; },
+    async remove(keys) { for (const key of Array.isArray(keys) ? keys : [keys]) delete values[key]; },
   };
 }
 
@@ -30,6 +31,12 @@ test("translation cache ignores URL fragments and isolates models", () => {
     "https://example.com/article\nhttps://api.example.com/v1\nvolcengine\nmodel-a",
   );
   assert.notEqual(textFingerprint("hello"), textFingerprint("hello!"));
+});
+
+test("loading the new cache removes marker-polluted legacy entries", async () => {
+  const storage = memoryStorage({ translationCacheV1: { entries: [{ scope: "old", segments: { x: "[/block:x]" } }] } });
+  await loadCachedTranslations(storage, descriptor);
+  assert.equal(storage.values.translationCacheV1, undefined);
 });
 
 test("translation cache saves, reads, and clears page translations", async () => {
