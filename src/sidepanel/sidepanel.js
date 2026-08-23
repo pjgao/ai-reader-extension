@@ -1,4 +1,5 @@
 import { OpenCodeClient } from "../opencode/client.js";
+import { clearTranslationCache, loadCachedTranslations, saveCachedTranslations, textFingerprint } from "../cache/translation-cache.js";
 import { chunkDocument, selectRelevantChunks } from "../pipeline/chunk.js";
 import { chunkSummaryPrompt, questionPrompt, synthesisPrompt, translationPrompt } from "../pipeline/prompts.js";
 import { BlockTranslationStream } from "../pipeline/translation-stream.js";
@@ -9,7 +10,8 @@ const $ = (id) => document.getElementById(id);
 const ui = Object.fromEntries([
   "connection-mode", "volcengine-settings", "volcengine-base-url", "volcengine-api-key", "volcengine-model",
   "volcengine-custom-model-row", "volcengine-custom-model-id", "volcengine-model-hint",
-  "opencode-settings", "server-url", "username", "password", "chunk-chars", "connect", "provider", "model", "extract",
+  "opencode-settings", "server-url", "username", "password", "chunk-chars", "translation-cache-enabled",
+  "clear-translation-cache", "connect", "provider", "model", "extract",
   "article-title", "article-meta", "translate", "restore", "analyze", "question", "ask", "stop", "copy", "export",
   "phase", "progress", "output", "sources", "error", "connection-badge",
 ].map((id) => [id.replaceAll("-", "_"), $(id)]));
@@ -115,7 +117,7 @@ function renderSources() {
 async function loadSettings() {
   const local = await chrome.storage.local.get([
     "connectionMode", "volcengineBaseUrl", "volcengineApiKey", "volcengineModelID",
-    "serverUrl", "username", "providerID", "modelID", "chunkChars",
+    "serverUrl", "username", "providerID", "modelID", "chunkChars", "translationCacheEnabled",
   ]);
   const session = await chrome.storage.session.get(["password", "volcengineApiKey"]);
   const volcengineApiKey = local.volcengineApiKey || session.volcengineApiKey || "";
@@ -132,6 +134,7 @@ async function loadSettings() {
   ui.username.value = local.username || "opencode";
   ui.password.value = session.password || "";
   ui.chunk_chars.value = local.chunkChars || 12000;
+  ui.translation_cache_enabled.checked = local.translationCacheEnabled !== false;
   updateModeUI();
   return local;
 }
@@ -147,6 +150,7 @@ async function saveSettings() {
     providerID: ui.provider.value,
     modelID: ui.model.value,
     chunkChars: Number(ui.chunk_chars.value),
+    translationCacheEnabled: ui.translation_cache_enabled.checked,
   });
   await chrome.storage.session.set({
     password: ui.password.value,
@@ -259,9 +263,14 @@ async function connect(preferred = {}) {
         const models = await state.client.models(controller.signal);
         fillVolcengineModels(models, preferredModel);
         ui.volcengine_model_hint.textContent = `已读取 ${models.length} 个可用模型，选择后会自动保存。`;
+        ui.volcengine_model_hint.classList.remove("warning-note");
       } catch (error) {
         fillVolcengineModels([], preferredModel);
-        ui.volcengine_model_hint.textContent = `网关不支持读取模型列表，请手动填写 Model ID。${safeError(error)}`;
+        const reason = safeError(error);
+        ui.volcengine_model_hint.textContent = reason.includes("HTTP 404")
+          ? "⚠ 当前网关没有提供模型列表接口（/models 返回 404）。请手动填写一次 Model ID，插件会自动记住。"
+          : `⚠ 自动读取模型失败：${reason}。请手动填写 Model ID。`;
+        ui.volcengine_model_hint.classList.add("warning-note");
       } finally {
         clearTimeout(timeout);
       }
@@ -406,12 +415,41 @@ async function translate() {
     const translations = new Map();
     const translatedIds = new Set();
     const blocksById = new Map(state.document.blocks.map((block) => [block.id, block]));
+    const segmentsById = new Map(state.document.blocks.flatMap((block) => block.segments || []).map((segment) => [segment.id, segment]));
     const totalSegments = state.document.blocks.reduce((sum, block) => sum + (block.segments?.length || 0), 0);
+    const cacheDescriptor = {
+      pageUrl: state.document.url,
+      baseUrl: state.mode === "volcengine" ? ui.volcengine_base_url.value.trim() : ui.server_url.value.trim(),
+      providerID: model.providerID,
+      modelID: model.modelID,
+    };
+    const cachedTranslations = ui.translation_cache_enabled.checked
+      ? await loadCachedTranslations(chrome.storage.local, cacheDescriptor)
+      : new Map();
+    const currentCache = new Map();
+    const persistCache = async () => {
+      if (!ui.translation_cache_enabled.checked || !currentCache.size) return;
+      try { await saveCachedTranslations(chrome.storage.local, cacheDescriptor, currentCache); } catch { /* 缓存失败不影响翻译。 */ }
+    };
+    const inputForSegments = (chunk, segmentIds) => {
+      const selected = new Set(segmentIds);
+      const blocks = chunk.blockIds
+        .map((id) => blocksById.get(id))
+        .filter(Boolean)
+        .map((block) => ({ ...block, segments: block.segments?.filter((segment) => selected.has(segment.id)) || [] }))
+        .filter((block) => block.segments.length);
+      return {
+        chunk: { blockIds: blocks.map((block) => block.id) },
+        document: { ...state.document, blocks },
+      };
+    };
     const updateTranslation = (update) => {
       translations.set(update.id, update.text);
       writer.queue(update);
       if (update.final && !translatedIds.has(update.id)) {
         translatedIds.add(update.id);
+        const source = segmentsById.get(update.id)?.text;
+        if (source) currentCache.set(textFingerprint(source), update.text);
         setProgress(translatedIds.size, totalSegments, `已翻译 ${translatedIds.size}/${totalSegments}`);
       }
     };
@@ -438,26 +476,36 @@ async function translate() {
       });
       parser.finish();
       await writer.finish();
+      await persistCache();
     };
-    setOutput("正在把译文直接写回原网页；尚未完成的内容继续保持英文。");
+    for (const segment of segmentsById.values()) {
+      const cached = cachedTranslations.get(textFingerprint(segment.text));
+      if (!cached) continue;
+      translations.set(segment.id, cached);
+      translatedIds.add(segment.id);
+      currentCache.set(textFingerprint(segment.text), cached);
+      writer.queue({ id: segment.id, text: cached, final: true });
+    }
+    await writer.finish();
+    const reusedCount = translatedIds.size;
+    setOutput(reusedCount
+      ? `已从本地缓存恢复 ${reusedCount} 个文本节点；只会请求尚未翻译或已经变化的内容。`
+      : "正在把译文直接写回原网页；尚未完成的内容继续保持英文。");
+    if (reusedCount) setProgress(reusedCount, totalSegments, `复用缓存 ${reusedCount}/${totalSegments}`);
     for (let index = 0; index < state.chunks.length; index += 1) {
       const segmentIds = state.chunks[index].blockIds
         .flatMap((id) => blocksById.get(id)?.segments?.map((segment) => segment.id) || [])
         .filter((id) => !translatedIds.has(id));
       if (!segmentIds.length) continue;
-      await translateBatch(state.chunks[index], state.document, segmentIds, `${state.document.title} · ${index + 1}`);
+      const pendingInput = inputForSegments(state.chunks[index], segmentIds);
+      await translateBatch(pendingInput.chunk, pendingInput.document, segmentIds, `${state.document.title} · ${index + 1}`);
 
       const missing = segmentIds.filter((id) => !translatedIds.has(id));
       if (missing.length) {
-        const missingSet = new Set(missing);
-        const retryBlocks = state.chunks[index].blockIds
-          .map((id) => blocksById.get(id))
-          .filter(Boolean)
-          .map((block) => ({ ...block, segments: block.segments?.filter((segment) => missingSet.has(segment.id)) || [] }))
-          .filter((block) => block.segments.length);
+        const retryInput = inputForSegments(state.chunks[index], missing);
         await translateBatch(
-          { blockIds: retryBlocks.map((block) => block.id) },
-          { ...state.document, blocks: retryBlocks },
+          retryInput.chunk,
+          retryInput.document,
           missing,
           `${state.document.title} · 补译 ${index + 1}`,
         );
@@ -468,7 +516,8 @@ async function translate() {
       .filter((block) => block.segments?.some((segment) => translations.has(segment.id)))
       .map((block) => `[block:${block.id}] ${block.segments.map((segment) => translations.get(segment.id) || segment.text).join("")}`)
       .join("\n\n");
-    setOutput(`${output || "原网页翻译完成。"}${missingCount ? `\n\n${missingCount} 个文本节点未返回译文，已保留原文。` : ""}`);
+    await persistCache();
+    setOutput(`${reusedCount ? `本次复用了 ${reusedCount} 个本地译文，避免了重复模型调用。\n\n` : ""}${output || "原网页翻译完成。"}${missingCount ? `\n\n${missingCount} 个文本节点未返回译文，已保留原文。` : ""}`);
     setProgress(totalSegments - missingCount, totalSegments, missingCount ? "翻译完成（部分保留原文）" : "翻译完成");
   });
 }
@@ -608,6 +657,12 @@ ui.volcengine_custom_model_id.addEventListener("change", async () => {
   setBusy(false);
 });
 ui.chunk_chars.addEventListener("change", saveSettings);
+ui.translation_cache_enabled.addEventListener("change", saveSettings);
+ui.clear_translation_cache.addEventListener("click", async () => {
+  await clearTranslationCache(chrome.storage.local);
+  ui.phase.textContent = "CACHE CLEARED";
+  setOutput("已清除本地译文缓存。已有 API Key、Base URL 和模型配置不受影响。");
+});
 ui.translate.addEventListener("click", translate);
 ui.restore.addEventListener("click", restoreOriginal);
 ui.analyze.addEventListener("click", analyze);

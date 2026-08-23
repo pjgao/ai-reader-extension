@@ -30,7 +30,7 @@
             <label>API Key<input id="volcengine-api-key" type="password" autocomplete="off" placeholder="保存在当前浏览器的本地配置"></label>
             <label>模型<select id="volcengine-model" disabled><option value="">连接后自动读取模型</option></select></label>
             <label id="volcengine-custom-model-row" hidden>Model ID<input id="volcengine-custom-model-id" spellcheck="false" placeholder="例如 endpoint 或模型 ID"></label>
-            <p id="volcengine-model-hint" class="privacy-note">连接后会自动读取可用模型。</p>
+            <p id="volcengine-model-hint" class="privacy-note" role="status">连接后会自动读取可用模型。</p>
             <p class="privacy-note">API Key 会保存在当前浏览器扩展的本地配置中，请仅在可信电脑上使用。</p>
           </div>
           <div id="opencode-settings" class="settings-grid" hidden>
@@ -43,6 +43,8 @@
             </div>
           </div>
           <label>单块字符上限<input id="chunk-chars" type="number" min="1000" max="48000" step="1000" value="12000"></label>
+          <label class="check-row"><input id="translation-cache-enabled" type="checkbox" checked>重复翻译相同页面时优先复用本地译文</label>
+          <button id="clear-translation-cache" class="ghost" type="button">清除译文缓存</button>
           <button id="connect" class="secondary">连接并读取模型</button>
         </details>
       </section>
