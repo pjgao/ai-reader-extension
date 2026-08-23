@@ -1,13 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { VolcengineClient, extractChatText, extractModels, extractUsage, normalizeVolcengineBaseUrl } from "../src/volcengine/client.js";
+import { OpenAICompatibleClient, extractChatText, extractModels, extractUsage, normalizeOpenAIBaseUrl } from "../src/openai-compatible/client.js";
 
-test("Volcengine base URL requires HTTPS and removes a trailing slash", () => {
-  assert.equal(normalizeVolcengineBaseUrl("https://ark.cn-beijing.volces.com/api/v3/"), "https://ark.cn-beijing.volces.com/api/v3");
-  assert.throws(() => normalizeVolcengineBaseUrl("http://example.com/v1"), /必须使用 HTTPS/);
+test("OpenAI-compatible base URL requires HTTPS and removes a trailing slash", () => {
+  assert.equal(normalizeOpenAIBaseUrl("https://api.deepseek.com/"), "https://api.deepseek.com");
+  assert.equal(normalizeOpenAIBaseUrl("https://ark.cn-beijing.volces.com/api/v3/"), "https://ark.cn-beijing.volces.com/api/v3");
+  assert.throws(() => normalizeOpenAIBaseUrl("http://example.com/v1"), /必须使用 HTTPS/);
 });
 
-test("Volcengine chat completion text is extracted", () => {
+test("OpenAI-compatible chat completion text is extracted", () => {
   assert.equal(extractChatText({ choices: [{ message: { content: "中文" } }] }), "中文");
 });
 
@@ -29,13 +30,13 @@ test("OpenAI-compatible model lists are normalized", () => {
   ]);
 });
 
-test("Volcengine client reads models from the compatible endpoint", async () => {
+test("OpenAI-compatible client reads models from the compatible endpoint", async () => {
   let request;
   const fetchImpl = async (url, options) => {
     request = { url, options };
     return Response.json({ data: [{ id: "model-a" }] });
   };
-  const client = new VolcengineClient({
+  const client = new OpenAICompatibleClient({
     baseUrl: "https://example.com/v1/chat/completions",
     apiKey: "secret",
     fetchImpl,
@@ -47,7 +48,7 @@ test("Volcengine client reads models from the compatible endpoint", async () => 
   assert.equal(request.options.headers.Authorization, "Bearer secret");
 });
 
-test("Volcengine client streams OpenAI-compatible chat completion deltas", async () => {
+test("OpenAI-compatible client streams chat completion deltas", async () => {
   const encoder = new TextEncoder();
   let request;
   const fetchImpl = async (url, options) => {
@@ -67,14 +68,14 @@ test("Volcengine client streams OpenAI-compatible chat completion deltas", async
   const deltas = [];
   let activities = 0;
   let usage;
-  const client = new VolcengineClient({ baseUrl: "https://ark.cn-beijing.volces.com/api/v3", apiKey: "x", fetchImpl });
+  const client = new OpenAICompatibleClient({ baseUrl: "https://api.deepseek.com", apiKey: "x", fetchImpl });
   const output = await client.messageStream("unused", { modelID: "model-id" }, "prompt", {
     onDelta: (delta) => deltas.push(delta),
     onActivity: () => { activities += 1; },
     onUsage: (value) => { usage = value; },
   });
 
-  assert.equal(request.url, "https://ark.cn-beijing.volces.com/api/v3/chat/completions");
+  assert.equal(request.url, "https://api.deepseek.com/chat/completions");
   const body = JSON.parse(request.options.body);
   assert.equal(body.stream, true);
   assert.equal(body.max_tokens, 8192);

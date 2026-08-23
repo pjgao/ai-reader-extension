@@ -19,13 +19,14 @@
       <section class="card settings">
         <label class="mode-label">使用方式
           <select id="connection-mode">
-            <option value="volcengine">火山直连（推荐）</option>
+            <option value="volcengine">模型 API 直连（推荐）</option>
             <option value="opencode">OpenCode（高级）</option>
           </select>
         </label>
         <details>
           <summary>连接设置</summary>
           <div id="volcengine-settings" class="settings-grid">
+            <p class="privacy-note">支持火山方舟、阿里百炼、DeepSeek、智谱、Kimi 等 OpenAI 兼容 API。</p>
             <label>Base URL<input id="volcengine-base-url" value="https://ark.cn-beijing.volces.com/api/v3" spellcheck="false"></label>
             <label>API Key<input id="volcengine-api-key" type="password" autocomplete="off" placeholder="保存在当前浏览器的本地配置"></label>
             <label>模型<select id="volcengine-model" disabled><option value="">连接后自动读取模型</option></select></label>

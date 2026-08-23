@@ -5,7 +5,7 @@ import { chunkSummaryPrompt, questionPrompt, synthesisPrompt, translationPrompt 
 import { TranslationTokenTracker } from "../pipeline/token-usage.js";
 import { BlockTranslationStream } from "../pipeline/translation-stream.js";
 import { PAGE_SYSTEM_PROMPT, safeError } from "../shared/security.js";
-import { DEFAULT_VOLCENGINE_BASE_URL, VolcengineClient } from "../volcengine/client.js";
+import { DEFAULT_OPENAI_BASE_URL, OpenAICompatibleClient } from "../openai-compatible/client.js";
 
 const $ = (id) => document.getElementById(id);
 const ui = Object.fromEntries([
@@ -141,7 +141,7 @@ async function loadSettings() {
   }
   state.mode = local.connectionMode || "volcengine";
   ui.connection_mode.value = state.mode;
-  ui.volcengine_base_url.value = local.volcengineBaseUrl || DEFAULT_VOLCENGINE_BASE_URL;
+  ui.volcengine_base_url.value = local.volcengineBaseUrl || DEFAULT_OPENAI_BASE_URL;
   ui.volcengine_api_key.value = volcengineApiKey;
   ui.volcengine_custom_model_id.value = local.volcengineModelID || "";
   ui.server_url.value = local.serverUrl || "http://127.0.0.1:4096";
@@ -191,7 +191,7 @@ function modelReady() {
   return Boolean(ui.provider.value && ui.model.value);
 }
 
-function fillVolcengineModels(models, preferredModel = "") {
+function fillDirectModels(models, preferredModel = "") {
   ui.volcengine_model.replaceChildren();
   for (const model of models) {
     const option = document.createElement("option");
@@ -220,7 +220,7 @@ function updateCustomModelUI() {
 
 function updateDirectReadyUI() {
   if (state.mode !== "volcengine" || !state.client) return;
-  ui.connection_badge.textContent = modelReady() ? "直连就绪" : "请选择模型";
+  ui.connection_badge.textContent = modelReady() ? "API 已连接" : "请选择模型";
   ui.connection_badge.className = "badge online";
 }
 
@@ -264,7 +264,7 @@ async function connect(preferred = {}) {
   clearError();
   if (state.mode === "volcengine") {
     try {
-      state.client = new VolcengineClient({
+      state.client = new OpenAICompatibleClient({
         baseUrl: ui.volcengine_base_url.value.trim(),
         apiKey: ui.volcengine_api_key.value,
       });
@@ -275,11 +275,11 @@ async function connect(preferred = {}) {
       const timeout = setTimeout(() => controller.abort(), 10_000);
       try {
         const models = await state.client.models(controller.signal);
-        fillVolcengineModels(models, preferredModel);
+        fillDirectModels(models, preferredModel);
         ui.volcengine_model_hint.textContent = `已读取 ${models.length} 个可用模型，选择后会自动保存。`;
         ui.volcengine_model_hint.classList.remove("warning-note");
       } catch (error) {
-        fillVolcengineModels([], preferredModel);
+        fillDirectModels([], preferredModel);
         const reason = safeError(error);
         ui.volcengine_model_hint.textContent = reason.includes("HTTP 404")
           ? "⚠ 当前网关没有提供模型列表接口（/models 返回 404）。请手动填写一次 Model ID，插件会自动记住。"
@@ -289,7 +289,7 @@ async function connect(preferred = {}) {
         clearTimeout(timeout);
       }
       await saveSettings();
-      ui.connection_badge.textContent = modelReady() ? "直连就绪" : "请选择模型";
+      ui.connection_badge.textContent = modelReady() ? "API 已连接" : "请选择模型";
       ui.connection_badge.className = "badge online";
       ui.phase.textContent = "READY";
     } catch (error) {
@@ -372,7 +372,7 @@ async function extractCurrentPage() {
   const effectiveChunkChars = state.mode === "volcengine" ? Math.min(configuredChunkChars, 4000) : configuredChunkChars;
   state.chunks = chunkDocument(state.document, { maxChars: effectiveChunkChars });
   ui.article_title.textContent = state.document.title;
-  ui.article_meta.textContent = `${state.document.blocks.length} 个内容块 · ${state.document.extractedChars.toLocaleString()} 字符 · ${state.chunks.length} 个模型分块${state.mode === "volcengine" && effectiveChunkChars < configuredChunkChars ? " · 已按直连稳定性自动细分" : ""}${state.document.truncated ? " · 已按安全上限截断" : ""}`;
+  ui.article_meta.textContent = `${state.document.blocks.length} 个内容块 · ${state.document.extractedChars.toLocaleString()} 字符 · ${state.chunks.length} 个模型分块${state.mode === "volcengine" && effectiveChunkChars < configuredChunkChars ? " · 已按 API 稳定性自动细分" : ""}${state.document.truncated ? " · 已按安全上限截断" : ""}`;
   return state.document;
 }
 

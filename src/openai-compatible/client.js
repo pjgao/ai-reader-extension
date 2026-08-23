@@ -1,11 +1,11 @@
 import { PAGE_SYSTEM_PROMPT, safeError } from "../shared/security.js";
 
-export const DEFAULT_VOLCENGINE_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3";
+export const DEFAULT_OPENAI_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3";
 
-export function normalizeVolcengineBaseUrl(value) {
-  const url = new URL(value || DEFAULT_VOLCENGINE_BASE_URL);
-  if (url.protocol !== "https:") throw new Error("火山 Base URL 必须使用 HTTPS");
-  if (url.username || url.password || url.search || url.hash) throw new Error("火山 Base URL 不能包含账号、查询参数或锚点");
+export function normalizeOpenAIBaseUrl(value) {
+  const url = new URL(value || DEFAULT_OPENAI_BASE_URL);
+  if (url.protocol !== "https:") throw new Error("API Base URL 必须使用 HTTPS");
+  if (url.username || url.password || url.search || url.hash) throw new Error("API Base URL 不能包含账号、查询参数或锚点");
   return url.href.replace(/\/$/, "");
 }
 
@@ -41,7 +41,7 @@ export function extractChatText(payload) {
   if (typeof content === "string" && content) return content;
   const providerError = payload?.error;
   if (providerError) throw new Error(`模型调用失败：${providerError.message || providerError.code || "未知错误"}`);
-  throw new Error("火山响应中没有文本内容");
+  throw new Error("模型 API 响应中没有文本内容");
 }
 
 export function extractUsage(payload) {
@@ -59,10 +59,10 @@ export function extractUsage(payload) {
   };
 }
 
-export class VolcengineClient {
+export class OpenAICompatibleClient {
   constructor({ baseUrl, apiKey, fetchImpl = fetch }) {
-    this.baseUrl = normalizeVolcengineBaseUrl(baseUrl);
-    if (!apiKey?.trim()) throw new Error("请填写火山 API Key");
+    this.baseUrl = normalizeOpenAIBaseUrl(baseUrl);
+    if (!apiKey?.trim()) throw new Error("请填写模型平台的 API Key");
     this.apiKey = apiKey.trim();
     this.fetch = fetchImpl.bind(globalThis);
   }
@@ -90,7 +90,7 @@ export class VolcengineClient {
   }
 
   async request(model, prompt, stream, signal) {
-    if (!model?.modelID) throw new Error("请填写火山 Model ID");
+    if (!model?.modelID) throw new Error("请填写模型平台的 Model ID");
     const response = await this.fetch(chatCompletionsUrl(this.baseUrl), {
       method: "POST",
       headers: {
@@ -113,7 +113,7 @@ export class VolcengineClient {
     });
     if (!response.ok) {
       const body = safeError((await response.text()).slice(0, 500));
-      throw new Error(`火山 HTTP ${response.status}${body ? `：${body}` : ""}`);
+      throw new Error(`模型 API HTTP ${response.status}${body ? `：${body}` : ""}`);
     }
     return response;
   }
@@ -125,7 +125,7 @@ export class VolcengineClient {
 
   async messageStream(_sessionId, model, prompt, { signal, onDelta, onActivity, onUsage } = {}) {
     const response = await this.request(model, prompt, true, signal);
-    if (!response.body) throw new Error("火山流式响应没有响应体");
+    if (!response.body) throw new Error("模型 API 流式响应没有响应体");
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
@@ -161,7 +161,7 @@ export class VolcengineClient {
       }
       if (done) break;
     }
-    if (!output) throw new Error("火山流式响应中没有文本内容");
+    if (!output) throw new Error("模型 API 流式响应中没有文本内容");
     return output;
   }
 

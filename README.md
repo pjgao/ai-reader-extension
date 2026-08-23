@@ -67,23 +67,29 @@ AI Reader 暂时以解压缩扩展的方式安装，不需要构建。
 
 更新代码后，在扩展管理页点击一次“重新加载”即可。
 
-## 最简单的配置：直接连接模型 API
+## 最简单的配置：连接模型平台 API
 
 第一次使用时展开“连接设置”，填写 Base URL 和 API Key，然后点击“连接并读取模型”。
 
-标准火山方舟地址：
+AI Reader 使用 OpenAI Chat Completions 兼容协议，不绑定某一家平台。下面这些官方 API 都可以配置：
 
-```text
-https://ark.cn-beijing.volces.com/api/v3
-```
+| 平台 | Base URL |
+| --- | --- |
+| [DeepSeek 开放平台](https://api-docs.deepseek.com/quick_start/pricing-details-cny/) | `https://api.deepseek.com` |
+| [阿里云百炼](https://help.aliyun.com/zh/model-studio/base-url) | `https://dashscope.aliyuncs.com/compatible-mode/v1`，或控制台提供的业务空间专属地址 |
+| [智谱开放平台](https://docs.bigmodel.cn/cn/api/introduction) | `https://open.bigmodel.cn/api/paas/v4` |
+| [Kimi 开放平台](https://platform.kimi.com/docs/api/overview) | `https://api.moonshot.cn/v1` |
+| [火山方舟](https://www.volcengine.com/docs/82379/1795150) | `https://ark.cn-beijing.volces.com/api/v3` |
 
-也可以使用任何兼容 OpenAI Chat Completions 的 HTTPS 地址。扩展会请求：
+也可以填写其他兼容 OpenAI Chat Completions 的 HTTPS 地址。扩展会请求：
 
 ```text
 POST {Base URL}/chat/completions
 ```
 
 如果服务支持 `GET {Base URL}/models`，模型会自动出现在下拉框里。如果返回 404，侧栏会明确提醒，并切换到手动 Model ID。只需填写一次，之后会自动恢复。
+
+这里需要的是模型开放平台提供的 API Key 和可用 API 额度。网页或 App 的聊天会员通常不等于 API 权益；Coding Plan、Token Plan 等套餐也要使用套餐指定的 Base URL、API Key 和模型范围。
 
 Base URL、API Key 和选中的模型保存在当前浏览器扩展的 `chrome.storage.local` 中。这里不是加密保险箱，只适合自己的可信电脑。
 
@@ -141,14 +147,14 @@ opencode serve --hostname 127.0.0.1 --port 4096 --cors "chrome-extension://<exte
 - PDF、跨域 iframe、Shadow DOM；
 - 只渲染当前可见区域的超长虚拟列表。
 
-单次正文上限为 60 万字符、5000 个内容块和 160 个模型分块。直连模式会自动缩小分块，避免长时间流式连接被网关关闭。
+单次正文上限为 60 万字符、5000 个内容块和 160 个模型分块。模型 API 模式会自动缩小分块，避免长时间流式连接被网关关闭。
 
 ## 安全说明
 
 - 只有用户点击操作后，扩展才读取当前标签页。
 - API Key 不会注入网页、写入日志或导出文件。
 - 网页正文始终按不可信数据处理，模型请求固定禁用工具调用。
-- 火山直连只接受 HTTPS；OpenCode 地址固定为 `http://127.0.0.1:4096`。
+- 模型 API 直连只接受 HTTPS；OpenCode 地址固定为 `http://127.0.0.1:4096`。
 - 译文缓存保存页面 URL、原文指纹和中文译文，不保存完整英文原文。敏感页面可以关闭缓存。
 
 ## 开发与测试
@@ -165,7 +171,8 @@ npm run check
 ```text
 manifest.json                 MV3 权限和 Side Panel 声明
 src/content/page-bridge.js    正文抽取、文本节点替换、原文恢复
-src/volcengine/client.js      OpenAI 兼容 Chat Completions 客户端
+src/openai-compatible/client.js
+                              OpenAI 兼容 Chat Completions 客户端
 src/opencode/client.js        OpenCode 高级模式客户端
 src/pipeline/                 分块、缓存、翻译协议和 Token 统计
 src/sidepanel/                侧栏界面与任务编排
