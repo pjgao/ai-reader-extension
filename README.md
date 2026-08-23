@@ -13,7 +13,7 @@
 
 </div>
 
-![AI Reader 把 DFlash 2 英文技术文章原位翻译成中文](./output/playwright/dflash2-translated-final.png)
+![AI Reader 把 DFlash 2 英文技术文章原位翻译成中文](./docs/images/dflash2-translated-final.png)
 
 ## 为什么写这个扩展
 
@@ -36,7 +36,7 @@ Chrome 和 Edge 自带翻译很方便，普通网页基本够用。但一碰到�
 侧栏保持在网页旁边，不会盖住正文：
 
 <p align="center">
-  <img alt="AI Reader Edge 侧栏" src="./output/playwright/ai-reader-v0.2-sidepanel-width.png" width="420">
+  <img alt="AI Reader Edge 侧栏" src="./docs/images/ai-reader-v0.2-sidepanel-width.png" width="420">
 </p>
 
 ## 它怎么工作
