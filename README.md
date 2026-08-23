@@ -81,11 +81,31 @@ AI Reader 使用 OpenAI Chat Completions 兼容协议，不绑定某一家平台
 
 | 平台 | Base URL | 模型选择 |
 | --- | --- | --- |
+| [Hugging Face Inference Providers](https://huggingface.co/docs/inference-providers/pricing) | `https://router.huggingface.co/v1` | 免费账号可用少量月度试用额度，支持自动读取模型 |
 | [DeepSeek 开放平台](https://api-docs.deepseek.com/quick_start/pricing-details-cny/) | `https://api.deepseek.com` | 支持自动读取模型 |
 | [阿里云百炼](https://help.aliyun.com/zh/model-studio/base-url) | `https://dashscope.aliyuncs.com/compatible-mode/v1`，或控制台显示的业务空间专属地址 | 自动读取失败时手动填写，例如 `qwen-plus` |
 | [智谱开放平台](https://docs.bigmodel.cn/cn/api/introduction) | `https://open.bigmodel.cn/api/paas/v4` | 自动读取失败时填写控制台中的 GLM Model ID |
 | [Kimi 开放平台](https://platform.kimi.com/docs/api/overview) | `https://api.moonshot.cn/v1` | 支持自动读取模型 |
 | [火山方舟](https://www.volcengine.com/docs/82379/1795150) | `https://ark.cn-beijing.volces.com/api/v3` | 选择自动读取结果，或填写方舟控制台中的模型/推理接入点 ID |
+
+### 用 Hugging Face 免费测试
+
+Hugging Face 免费账号目前每月有少量 Inference Providers 试用额度，具体金额可能调整。它适合翻译一小段文字或短页面，确认 AI Reader 的连接、流式输出和原位替换都正常；完整技术文章可能很快用完额度。
+
+1. 注册或登录 [Hugging Face](https://huggingface.co/)。
+2. 打开 [Access Tokens](https://huggingface.co/settings/tokens)，点击“Create new token”。
+3. 创建 Fine-grained Token，并勾选“Make calls to Inference Providers”权限。
+4. 在 AI Reader 中选择“模型 API 直连”，填写：
+
+```text
+Base URL: https://router.huggingface.co/v1
+API Key:  hf_开头的个人 Token
+```
+
+5. 点击“连接并读取模型”，从下拉框中选择支持 Chat Completions 的低价文本模型。
+6. 先打开一个文字不多的英文网页，点击“翻译当前网页”完成测试。
+
+免费额度只适用于通过 Hugging Face Router 计费的请求。额度用完后，需要等待下个月恢复或在 Hugging Face 购买额度。每位用户都应该使用自己的 Token；不要把个人 Token 写进扩展、提交到 GitHub，或作为公共 Key 分享。
 
 ### DeepSeek
 
