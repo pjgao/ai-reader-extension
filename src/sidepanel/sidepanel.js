@@ -2,8 +2,9 @@ import { OpenCodeClient } from "../opencode/client.js";
 import { clearTranslationCache, loadCachedTranslations, saveCachedTranslations, textFingerprint } from "../cache/translation-cache.js";
 import { chunkDocument, selectRelevantChunks } from "../pipeline/chunk.js";
 import { chunkSummaryPrompt, questionPrompt, synthesisPrompt, translationPrompt } from "../pipeline/prompts.js";
+import { TranslationTokenTracker } from "../pipeline/token-usage.js";
 import { BlockTranslationStream } from "../pipeline/translation-stream.js";
-import { safeError } from "../shared/security.js";
+import { PAGE_SYSTEM_PROMPT, safeError } from "../shared/security.js";
 import { DEFAULT_VOLCENGINE_BASE_URL, VolcengineClient } from "../volcengine/client.js";
 
 const $ = (id) => document.getElementById(id);
@@ -13,7 +14,7 @@ const ui = Object.fromEntries([
   "opencode-settings", "server-url", "username", "password", "chunk-chars", "translation-cache-enabled",
   "clear-translation-cache", "connect", "provider", "model", "extract",
   "article-title", "article-meta", "translate", "restore", "analyze", "question", "ask", "stop", "copy", "export",
-  "phase", "progress", "output", "sources", "error", "connection-badge",
+  "phase", "progress", "token-usage", "output", "sources", "error", "connection-badge",
 ].map((id) => [id.replaceAll("-", "_"), $(id)]));
 
 const state = {
@@ -80,6 +81,19 @@ function setProgress(current, total, label) {
   ui.progress.hidden = false;
   ui.progress.querySelector("span").style.width = `${Math.max(0, Math.min(100, (current / total) * 100))}%`;
   ui.phase.textContent = label.toUpperCase();
+}
+
+function renderTokenUsage(usage) {
+  ui.token_usage.hidden = false;
+  if (!usage.requestCount) {
+    ui.token_usage.textContent = usage.cachedSegments
+      ? `本次 Token：0 · 缓存命中 ${usage.cachedSegments} 段（不计入）`
+      : "本次 Token：0 · 尚未调用模型";
+    return;
+  }
+  const accuracy = usage.exact ? "精确" : "动态估算";
+  const cached = usage.cachedSegments ? ` · 缓存命中 ${usage.cachedSegments} 段（不计入）` : "";
+  ui.token_usage.textContent = `本次 Token：${usage.totalTokens.toLocaleString()} · 输入 ${usage.inputTokens.toLocaleString()} · 输出 ${usage.outputTokens.toLocaleString()} · ${accuracy}${cached}`;
 }
 
 function setBusy(busy) {
@@ -408,6 +422,7 @@ async function runTask(task) {
 }
 
 async function translate() {
+  renderTokenUsage({ inputTokens: 0, outputTokens: 0, totalTokens: 0, cachedSegments: 0, requestCount: 0, exact: false });
   return runTask(async (signal) => {
     await extractCurrentPage();
     const model = selectedModel();
@@ -426,6 +441,7 @@ async function translate() {
     const cachedTranslations = ui.translation_cache_enabled.checked
       ? await loadCachedTranslations(chrome.storage.local, cacheDescriptor)
       : new Map();
+    const tokenTracker = new TranslationTokenTracker(renderTokenUsage);
     const currentCache = new Map();
     const persistCache = async () => {
       if (!ui.translation_cache_enabled.checked || !currentCache.size) return;
@@ -457,11 +473,14 @@ async function translate() {
       setProgress(translatedIds.size, totalSegments, `模型生成中 ${translatedIds.size}/${totalSegments}`);
       state.sessionId = await state.client.createSession(title, signal);
       const parser = new BlockTranslationStream(segmentIds, updateTranslation);
+      const prompt = translationPrompt(chunk, document);
+      const tokenRequest = tokenTracker.beginRequest(`${PAGE_SYSTEM_PROMPT}\n${prompt}`);
       let activityReported = false;
       let contentReported = false;
-      await state.client.messageStream(state.sessionId, model, translationPrompt(chunk, document), {
+      await state.client.messageStream(state.sessionId, model, prompt, {
         signal,
         onDelta: (delta) => {
+          tokenTracker.addDelta(tokenRequest, delta);
           if (!contentReported) {
             contentReported = true;
             setProgress(translatedIds.size, totalSegments, `正在翻译 ${translatedIds.size}/${totalSegments}`);
@@ -473,6 +492,7 @@ async function translate() {
           activityReported = true;
           setProgress(translatedIds.size, totalSegments, `模型思考中 ${translatedIds.size}/${totalSegments}`);
         },
+        onUsage: (usage) => tokenTracker.setUsage(tokenRequest, usage),
       });
       parser.finish();
       await writer.finish();
@@ -488,6 +508,7 @@ async function translate() {
     }
     await writer.finish();
     const reusedCount = translatedIds.size;
+    tokenTracker.setCachedSegments(reusedCount);
     setOutput(reusedCount
       ? `已从本地缓存恢复 ${reusedCount} 个文本节点；只会请求尚未翻译或已经变化的内容。`
       : "正在把译文直接写回原网页；尚未完成的内容继续保持英文。");

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { VolcengineClient, extractChatText, extractModels, normalizeVolcengineBaseUrl } from "../src/volcengine/client.js";
+import { VolcengineClient, extractChatText, extractModels, extractUsage, normalizeVolcengineBaseUrl } from "../src/volcengine/client.js";
 
 test("Volcengine base URL requires HTTPS and removes a trailing slash", () => {
   assert.equal(normalizeVolcengineBaseUrl("https://ark.cn-beijing.volces.com/api/v3/"), "https://ark.cn-beijing.volces.com/api/v3");
@@ -9,6 +9,14 @@ test("Volcengine base URL requires HTTPS and removes a trailing slash", () => {
 
 test("Volcengine chat completion text is extracted", () => {
   assert.equal(extractChatText({ choices: [{ message: { content: "中文" } }] }), "中文");
+});
+
+test("OpenAI-compatible token usage is normalized", () => {
+  assert.deepEqual(extractUsage({ usage: { prompt_tokens: 12, completion_tokens: 4, total_tokens: 16 } }), {
+    inputTokens: 12,
+    outputTokens: 4,
+    totalTokens: 16,
+  });
 });
 
 test("OpenAI-compatible model lists are normalized", () => {
@@ -49,6 +57,7 @@ test("Volcengine client streams OpenAI-compatible chat completion deltas", async
         controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"reasoning_content":"思考"}}]}\n\n'));
         controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"中"}}]}\n\n'));
         controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"文"}}]}\n\n'));
+        controller.enqueue(encoder.encode('data: {"choices":[],"usage":{"prompt_tokens":10,"completion_tokens":2,"total_tokens":12}}\n\n'));
         controller.enqueue(encoder.encode("data: [DONE]\n\n"));
         controller.close();
       },
@@ -57,17 +66,21 @@ test("Volcengine client streams OpenAI-compatible chat completion deltas", async
   };
   const deltas = [];
   let activities = 0;
+  let usage;
   const client = new VolcengineClient({ baseUrl: "https://ark.cn-beijing.volces.com/api/v3", apiKey: "x", fetchImpl });
   const output = await client.messageStream("unused", { modelID: "model-id" }, "prompt", {
     onDelta: (delta) => deltas.push(delta),
     onActivity: () => { activities += 1; },
+    onUsage: (value) => { usage = value; },
   });
 
   assert.equal(request.url, "https://ark.cn-beijing.volces.com/api/v3/chat/completions");
   const body = JSON.parse(request.options.body);
   assert.equal(body.stream, true);
   assert.equal(body.max_tokens, 8192);
+  assert.deepEqual(body.stream_options, { include_usage: true });
   assert.equal(output, "中文");
   assert.deepEqual(deltas, ["中", "文"]);
   assert.equal(activities, 3);
+  assert.deepEqual(usage, { inputTokens: 10, outputTokens: 2, totalTokens: 12 });
 });

@@ -44,6 +44,21 @@ export function extractChatText(payload) {
   throw new Error("火山响应中没有文本内容");
 }
 
+export function extractUsage(payload) {
+  const usage = payload?.usage;
+  if (!usage) return null;
+  const inputTokens = usage.prompt_tokens ?? usage.input_tokens ?? usage.promptTokens ?? usage.inputTokens;
+  const outputTokens = usage.completion_tokens ?? usage.output_tokens ?? usage.completionTokens ?? usage.outputTokens;
+  const totalTokens = usage.total_tokens ?? usage.totalTokens
+    ?? (Number.isFinite(inputTokens) && Number.isFinite(outputTokens) ? inputTokens + outputTokens : undefined);
+  if (!Number.isFinite(totalTokens)) return null;
+  return {
+    ...(Number.isFinite(inputTokens) ? { inputTokens } : {}),
+    ...(Number.isFinite(outputTokens) ? { outputTokens } : {}),
+    totalTokens,
+  };
+}
+
 export class VolcengineClient {
   constructor({ baseUrl, apiKey, fetchImpl = fetch }) {
     this.baseUrl = normalizeVolcengineBaseUrl(baseUrl);
@@ -90,6 +105,7 @@ export class VolcengineClient {
           { role: "user", content: prompt },
         ],
         stream,
+        ...(stream ? { stream_options: { include_usage: true } } : {}),
         temperature: 0.1,
         max_tokens: 8192,
       }),
@@ -107,7 +123,7 @@ export class VolcengineClient {
     return extractChatText(await response.json());
   }
 
-  async messageStream(_sessionId, model, prompt, { signal, onDelta, onActivity } = {}) {
+  async messageStream(_sessionId, model, prompt, { signal, onDelta, onActivity, onUsage } = {}) {
     const response = await this.request(model, prompt, true, signal);
     if (!response.body) throw new Error("火山流式响应没有响应体");
     const reader = response.body.getReader();
@@ -132,6 +148,8 @@ export class VolcengineClient {
         let event;
         try { event = JSON.parse(data); } catch { continue; }
         if (event.error) throw new Error(`模型调用失败：${event.error.message || event.error.code || "未知错误"}`);
+        const usage = extractUsage(event);
+        if (usage) onUsage?.(usage);
         const delta = event?.choices?.[0]?.delta?.content;
         const reasoning = event?.choices?.[0]?.delta?.reasoning_content;
         if (typeof reasoning === "string" && reasoning) onActivity?.();
