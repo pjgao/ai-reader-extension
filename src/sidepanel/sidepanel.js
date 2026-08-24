@@ -1,7 +1,8 @@
 import { OpenCodeClient } from "../opencode/client.js";
 import { clearTranslationCache, loadCachedTranslations, saveCachedTranslations, textFingerprint } from "../cache/translation-cache.js";
 import { chunkDocument, selectRelevantChunks } from "../pipeline/chunk.js";
-import { chunkSummaryPrompt, questionPrompt, synthesisPrompt, translationPrompt } from "../pipeline/prompts.js";
+import { chunkSummaryPrompt, questionPrompt, refinementPrompt, synthesisPrompt, translationPrompt } from "../pipeline/prompts.js";
+import { buildRefinementBatches } from "../pipeline/refinement.js";
 import { TranslationTokenTracker } from "../pipeline/token-usage.js";
 import { BlockTranslationStream } from "../pipeline/translation-stream.js";
 import { PAGE_SYSTEM_PROMPT, safeError } from "../shared/security.js";
@@ -11,7 +12,7 @@ const $ = (id) => document.getElementById(id);
 const ui = Object.fromEntries([
   "connection-mode", "volcengine-settings", "volcengine-base-url", "volcengine-api-key", "volcengine-model",
   "volcengine-custom-model-row", "volcengine-custom-model-id", "volcengine-model-hint",
-  "opencode-settings", "server-url", "username", "password", "chunk-chars", "translation-cache-enabled",
+  "opencode-settings", "server-url", "username", "password", "chunk-chars", "translation-cache-enabled", "translation-refinement-enabled",
   "clear-translation-cache", "connect", "provider", "model", "extract",
   "article-title", "article-meta", "translate", "restore", "analyze", "question", "ask", "stop", "copy", "export",
   "phase", "progress", "token-usage", "output", "sources", "error", "connection-badge",
@@ -131,7 +132,7 @@ function renderSources() {
 async function loadSettings() {
   const local = await chrome.storage.local.get([
     "connectionMode", "volcengineBaseUrl", "volcengineApiKey", "volcengineModelID",
-    "serverUrl", "username", "providerID", "modelID", "chunkChars", "translationCacheEnabled",
+    "serverUrl", "username", "providerID", "modelID", "chunkChars", "translationCacheEnabled", "translationRefinementEnabled",
   ]);
   const session = await chrome.storage.session.get(["password", "volcengineApiKey"]);
   const volcengineApiKey = local.volcengineApiKey || session.volcengineApiKey || "";
@@ -149,6 +150,7 @@ async function loadSettings() {
   ui.password.value = session.password || "";
   ui.chunk_chars.value = local.chunkChars || 12000;
   ui.translation_cache_enabled.checked = local.translationCacheEnabled !== false;
+  ui.translation_refinement_enabled.checked = local.translationRefinementEnabled === true;
   updateModeUI();
   return local;
 }
@@ -165,6 +167,7 @@ async function saveSettings() {
     modelID: ui.model.value,
     chunkChars: Number(ui.chunk_chars.value),
     translationCacheEnabled: ui.translation_cache_enabled.checked,
+    translationRefinementEnabled: ui.translation_refinement_enabled.checked,
   });
   await chrome.storage.session.set({
     password: ui.password.value,
@@ -432,20 +435,30 @@ async function translate() {
     const blocksById = new Map(state.document.blocks.map((block) => [block.id, block]));
     const segmentsById = new Map(state.document.blocks.flatMap((block) => block.segments || []).map((segment) => [segment.id, segment]));
     const totalSegments = state.document.blocks.reduce((sum, block) => sum + (block.segments?.length || 0), 0);
-    const cacheDescriptor = {
+    const standardCacheDescriptor = {
       pageUrl: state.document.url,
       baseUrl: state.mode === "volcengine" ? ui.volcengine_base_url.value.trim() : ui.server_url.value.trim(),
       providerID: model.providerID,
       modelID: model.modelID,
     };
-    const cachedTranslations = ui.translation_cache_enabled.checked
-      ? await loadCachedTranslations(chrome.storage.local, cacheDescriptor)
+    const refinementEnabled = ui.translation_refinement_enabled.checked;
+    const refinedCacheDescriptor = { ...standardCacheDescriptor, variant: "refined-v1" };
+    const standardCachedTranslations = ui.translation_cache_enabled.checked
+      ? await loadCachedTranslations(chrome.storage.local, standardCacheDescriptor)
       : new Map();
+    const refinedCachedTranslations = refinementEnabled && ui.translation_cache_enabled.checked
+      ? await loadCachedTranslations(chrome.storage.local, refinedCacheDescriptor)
+      : new Map();
+    const cachedTranslations = refinementEnabled
+      ? new Map([...standardCachedTranslations, ...refinedCachedTranslations])
+      : standardCachedTranslations;
+    const refinedCacheComplete = refinementEnabled && [...segmentsById.values()]
+      .every((segment) => refinedCachedTranslations.has(textFingerprint(segment.text)));
     const tokenTracker = new TranslationTokenTracker(renderTokenUsage);
     const currentCache = new Map();
-    const persistCache = async () => {
+    const persistCache = async (descriptor = standardCacheDescriptor) => {
       if (!ui.translation_cache_enabled.checked || !currentCache.size) return;
-      try { await saveCachedTranslations(chrome.storage.local, cacheDescriptor, currentCache); } catch { /* 缓存失败不影响翻译。 */ }
+      try { await saveCachedTranslations(chrome.storage.local, descriptor, currentCache); } catch { /* 缓存失败不影响翻译。 */ }
     };
     const inputForSegments = (chunk, segmentIds) => {
       const selected = new Set(segmentIds);
@@ -498,6 +511,47 @@ async function translate() {
       await writer.finish();
       await persistCache();
     };
+    const refineAllTranslations = async () => {
+      const batches = buildRefinementBatches(state.document, translations);
+      const refinedIds = new Set();
+      for (let index = 0; index < batches.length; index += 1) {
+        const batch = batches[index];
+        const batchIds = batch.map((entry) => entry.id);
+        const before = new Map(batch.map((entry) => [entry.id, entry.translation]));
+        const updateRefinement = (update) => {
+          translations.set(update.id, update.text);
+          writer.queue(update);
+          if (!update.final) return;
+          if (update.text !== before.get(update.id)) refinedIds.add(update.id);
+          const source = segmentsById.get(update.id)?.text;
+          if (source) currentCache.set(textFingerprint(source), update.text);
+          setProgress(index, batches.length, `精校中 · 已修正 ${refinedIds.size} 个节点`);
+        };
+        state.sessionId = await state.client.createSession(`${state.document.title} · 全文精校 ${index + 1}`, signal);
+        const parser = new BlockTranslationStream(batchIds, updateRefinement);
+        const prompt = refinementPrompt(batch, state.document);
+        const tokenRequest = tokenTracker.beginRequest(`${PAGE_SYSTEM_PROMPT}\n${prompt}`);
+        let activityReported = false;
+        setProgress(index, batches.length, `全文精校 ${index + 1}/${batches.length}`);
+        await state.client.messageStream(state.sessionId, model, prompt, {
+          signal,
+          onDelta: (delta) => {
+            tokenTracker.addDelta(tokenRequest, delta);
+            parser.push(delta);
+          },
+          onActivity: () => {
+            if (activityReported) return;
+            activityReported = true;
+            setProgress(index, batches.length, `模型检查中 ${index + 1}/${batches.length}`);
+          },
+          onUsage: (usage) => tokenTracker.setUsage(tokenRequest, usage),
+        });
+        parser.finish();
+        await writer.finish();
+        await persistCache();
+      }
+      return refinedIds.size;
+    };
     for (const segment of segmentsById.values()) {
       const cached = cachedTranslations.get(textFingerprint(segment.text));
       if (!cached) continue;
@@ -533,13 +587,27 @@ async function translate() {
       }
     }
     const missingCount = totalSegments - translatedIds.size;
+    let refinedCount = 0;
+    if (refinementEnabled && !refinedCacheComplete && translations.size) {
+      setOutput("首轮翻译完成，正在进行全文精校；只会替换需要修正的文本节点。");
+      refinedCount = await refineAllTranslations();
+      await persistCache(refinedCacheDescriptor);
+    }
     const output = state.document.blocks
       .filter((block) => block.segments?.some((segment) => translations.has(segment.id)))
       .map((block) => `[block:${block.id}] ${block.segments.map((segment) => translations.get(segment.id) || segment.text).join("")}`)
       .join("\n\n");
     await persistCache();
-    setOutput(`${reusedCount ? `本次复用了 ${reusedCount} 个本地译文，避免了重复模型调用。\n\n` : ""}${output || "原网页翻译完成。"}${missingCount ? `\n\n${missingCount} 个文本节点未返回译文，已保留原文。` : ""}`);
-    setProgress(totalSegments - missingCount, totalSegments, missingCount ? "翻译完成（部分保留原文）" : "翻译完成");
+    const refinementNote = refinementEnabled
+      ? refinedCacheComplete
+        ? "\n\n全文精校结果已从缓存恢复，本次没有重复调用模型。"
+        : `\n\n全文精校完成，修正了 ${refinedCount} 个文本节点。`
+      : "";
+    setOutput(`${reusedCount ? `本次复用了 ${reusedCount} 个本地译文，避免了重复模型调用。\n\n` : ""}${output || "原网页翻译完成。"}${missingCount ? `\n\n${missingCount} 个文本节点未返回译文，已保留原文。` : ""}${refinementNote}`);
+    const completionLabel = refinementEnabled
+      ? missingCount ? "翻译与精校完成（部分保留原文）" : "翻译与精校完成"
+      : missingCount ? "翻译完成（部分保留原文）" : "翻译完成";
+    setProgress(totalSegments - missingCount, totalSegments, completionLabel);
   });
 }
 
@@ -679,6 +747,7 @@ ui.volcengine_custom_model_id.addEventListener("change", async () => {
 });
 ui.chunk_chars.addEventListener("change", saveSettings);
 ui.translation_cache_enabled.addEventListener("change", saveSettings);
+ui.translation_refinement_enabled.addEventListener("change", saveSettings);
 ui.clear_translation_cache.addEventListener("click", async () => {
   await clearTranslationCache(chrome.storage.local);
   ui.phase.textContent = "CACHE CLEARED";

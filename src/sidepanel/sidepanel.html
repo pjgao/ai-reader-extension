@@ -45,6 +45,7 @@
           </div>
           <label>单块字符上限<input id="chunk-chars" type="number" min="1000" max="48000" step="1000" value="12000"></label>
           <label class="check-row"><input id="translation-cache-enabled" type="checkbox" checked>重复翻译相同页面时优先复用本地译文</label>
+          <label class="check-row"><input id="translation-refinement-enabled" type="checkbox">翻译完成后进行全文精校（增加 Token）</label>
           <button id="clear-translation-cache" class="ghost" type="button">清除译文缓存</button>
           <button id="connect" class="secondary">连接并读取模型</button>
         </details>

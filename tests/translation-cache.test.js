@@ -33,6 +33,14 @@ test("translation cache ignores URL fragments and isolates models", () => {
   assert.notEqual(textFingerprint("hello"), textFingerprint("hello!"));
 });
 
+test("refined translations use a separate cache variant", () => {
+  const descriptor = { pageUrl: "https://example.com/a", baseUrl: "https://api.example.com/v1", providerID: "direct", modelID: "model-a" };
+  assert.notEqual(
+    translationCacheScope(descriptor),
+    translationCacheScope({ ...descriptor, variant: "refined-v1" }),
+  );
+});
+
 test("loading the new cache removes marker-polluted legacy entries", async () => {
   const storage = memoryStorage({ translationCacheV1: { entries: [{ scope: "old", segments: { x: "[/block:x]" } }] } });
   await loadCachedTranslations(storage, descriptor);

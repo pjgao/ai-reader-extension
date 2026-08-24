@@ -20,8 +20,10 @@ export function textFingerprint(text) {
   return `${text.length}:${(first >>> 0).toString(16)}${(second >>> 0).toString(16)}`;
 }
 
-export function translationCacheScope({ pageUrl, baseUrl, providerID, modelID }) {
-  return [normalizedUrl(pageUrl), baseUrl, providerID, modelID].join("\n");
+export function translationCacheScope({ pageUrl, baseUrl, providerID, modelID, variant }) {
+  const parts = [normalizedUrl(pageUrl), baseUrl, providerID, modelID];
+  if (variant) parts.push(variant);
+  return parts.join("\n");
 }
 
 export async function loadCachedTranslations(storage, descriptor) {
