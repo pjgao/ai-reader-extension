@@ -26,6 +26,27 @@ export function translationPrompt(chunk, document, language = "简体中文") {
   ].join("\n\n");
 }
 
+export function refinementPrompt(entries, document, language = "简体中文") {
+  const input = entries
+    .map(({ id, source, translation }) => [
+      `[context:${id}]`,
+      `原文：${source}`,
+      `现有译文：${translation}`,
+      `[/context:${id}]`,
+    ].join("\n"))
+    .join("\n\n");
+  return [
+    `检查《${document.title}》以下网页译文的术语、指代、语义和${language}表达是否准确一致。`,
+    "只修改确实存在问题的文本节点；不要为了换一种说法而改写正确译文。模型名、代码、数字、链接文字和技术术语要忠实于原文。",
+    "需要修改时，严格使用下面的纯文本格式，只输出修改后的完整译文：",
+    "[block:原ID]",
+    "修正后的译文",
+    "[/block:原ID]",
+    "没有问题的节点不要输出。若本组无需修改，只输出 [no_changes]。不得输出 Markdown 代码围栏、JSON、数组、解释或 context 标记，不得合并、拆分或改写 block ID。",
+    wrapPageContent(input),
+  ].join("\n\n");
+}
+
 export function chunkSummaryPrompt(chunk) {
   return [
     "提炼以下章节的事实、论点、证据与限制，保留关键 [block:ID] 引用。明确区分原文陈述和你的推断。",
